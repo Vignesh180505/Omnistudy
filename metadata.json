@@ -1,0 +1,7 @@
+{
+  "name": "OmniStudy - Your AI Learning Partner",
+  "description": "A comprehensive study platform that explains complex concepts, summarizes notes, and generates interactive quizzes and flashcards using advanced AI.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
