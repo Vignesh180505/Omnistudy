@@ -1,5 +1,5 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 import os
 import requests
 from dotenv import load_dotenv
@@ -23,8 +23,9 @@ except Exception:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    client = genai.Client(api_key=GEMINI_API_KEY)
 else:
+    client = None
     st.error("⚠️ GEMINI_API_KEY not found. Please add it in Streamlit Secrets or .env file.")
 
 # CSS styling
