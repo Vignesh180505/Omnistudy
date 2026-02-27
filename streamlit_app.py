@@ -1,7 +1,7 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-from google.generativeai import genai
+import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 from datetime import datetime
@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # Initialize Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 

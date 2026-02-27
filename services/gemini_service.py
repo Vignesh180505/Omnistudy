@@ -4,7 +4,6 @@ import base64
 import os
 
 API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y")
-genai.configure(api_key=API_KEY)
 
 BASE_CLEAN_TEXT_INSTRUCTION = """
 IMPORTANT: Do not use Markdown symbols like #, *, **, or _ in your response. 
