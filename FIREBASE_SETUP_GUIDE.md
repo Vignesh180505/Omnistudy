@@ -27,7 +27,7 @@
 
 ```toml
 # Gemini API Key
-GEMINI_API_KEY = "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y"
+GEMINI_API_KEY = "YOUR_NEW_GEMINI_API_KEY_HERE"
 
 # Firebase Service Account Configuration
 [firebase]

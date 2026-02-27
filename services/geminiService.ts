@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { QuizQuestion, Flashcard, SummaryResult, ChatMessage, MnemonicItem, StoryResult } from "../types";
 
-const API_KEY = "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y"|| "";
+const API_KEY = process.env.GEMINI_API_KEY || "";
 
 const BASE_CLEAN_TEXT_INSTRUCTION = `
 IMPORTANT: Do not use Markdown symbols like #, *, **, or _ in your response. 

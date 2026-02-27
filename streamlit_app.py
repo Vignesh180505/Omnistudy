@@ -16,10 +16,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize Gemini
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y")) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY", "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y")
+# Initialize Gemini - API key from Streamlit secrets or environment variable
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+else:
+    st.error("⚠️ GEMINI_API_KEY not found. Please add it in Streamlit Secrets or .env file.")
 
 # CSS styling
 st.markdown("""
@@ -59,7 +65,10 @@ if "show_register" not in st.session_state:
     st.session_state.show_register = False
 
 # Firebase Web API Key (for REST API authentication)
-FIREBASE_WEB_API_KEY = "AIzaSyCcz2ObmhrXMLXdINv-fA_xud3JCDnBy8Y"
+try:
+    FIREBASE_WEB_API_KEY = st.secrets["FIREBASE_WEB_API_KEY"]
+except Exception:
+    FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "")
 
 # Authentication functions using Firebase REST API
 def login_user(email, password):
