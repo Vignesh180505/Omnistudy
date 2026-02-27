@@ -1,8 +1,9 @@
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, auth, firestore
+from firebase_admin import credentials, auth as admin_auth, firestore
 import google.generativeai as genai
 import os
+import requests
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -92,24 +93,77 @@ if "current_view" not in st.session_state:
 if "show_register" not in st.session_state:
     st.session_state.show_register = False
 
-# Authentication functions
+# Firebase Web API Key (for REST API authentication)
+FIREBASE_WEB_API_KEY = "AIzaSyCcz2ObmhrXMLXdINv-fA_xud3JCDnBy8Y"
+
+# Authentication functions using Firebase REST API
 def login_user(email, password):
     try:
-        user = auth.get_user_by_email(email)
-        st.session_state.user = {
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_WEB_API_KEY}"
+        payload = {
             "email": email,
-            "name": email.split("@")[0],
-            "uid": user.uid
+            "password": password,
+            "returnSecureToken": True
         }
-        st.success("Login successful!")
+        response = requests.post(url, json=payload)
+        data = response.json()
+        
+        if "error" in data:
+            error_msg = data["error"].get("message", "Login failed")
+            if error_msg == "EMAIL_NOT_FOUND":
+                st.error("No account found with this email. Please register first.")
+            elif error_msg == "INVALID_PASSWORD":
+                st.error("Incorrect password. Please try again.")
+            elif error_msg == "INVALID_LOGIN_CREDENTIALS":
+                st.error("Invalid email or password. Please try again.")
+            else:
+                st.error(f"Login failed: {error_msg}")
+            return
+        
+        st.session_state.user = {
+            "email": data["email"],
+            "name": data["email"].split("@")[0],
+            "uid": data["localId"]
+        }
+        st.success("✅ Login successful!")
         st.rerun()
     except Exception as e:
         st.error(f"Login failed: {str(e)}")
 
+def register_user(name, email, password):
+    try:
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={FIREBASE_WEB_API_KEY}"
+        payload = {
+            "email": email,
+            "password": password,
+            "returnSecureToken": True
+        }
+        response = requests.post(url, json=payload)
+        data = response.json()
+        
+        if "error" in data:
+            error_msg = data["error"].get("message", "Registration failed")
+            if error_msg == "EMAIL_EXISTS":
+                st.error("An account with this email already exists. Please login.")
+            elif "WEAK_PASSWORD" in error_msg:
+                st.error("Password must be at least 6 characters.")
+            else:
+                st.error(f"Registration failed: {error_msg}")
+            return
+        
+        st.session_state.user = {
+            "email": data["email"],
+            "name": name,
+            "uid": data["localId"]
+        }
+        st.success("✅ Account created successfully!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Registration failed: {str(e)}")
+
 def logout_user():
     st.session_state.user = None
     st.session_state.current_view = "dashboard"
-    st.success("Logged out successfully!")
     st.rerun()
 
 # View components
@@ -424,11 +478,10 @@ if not st.session_state.user:
                 if st.button("Register", use_container_width=True):
                     if name and email and password and confirm_password:
                         if password == confirm_password:
-                            try:
-                                auth.create_user(email=email, password=password, display_name=name)
-                                login_user(email, password)
-                            except Exception as e:
-                                st.error(f"Registration failed: {str(e)}")
+                            if len(password) < 6:
+                                st.error("Password must be at least 6 characters")
+                            else:
+                                register_user(name, email, password)
                         else:
                             st.error("Passwords do not match")
                     else:
