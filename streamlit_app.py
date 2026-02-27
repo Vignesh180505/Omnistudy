@@ -1,6 +1,4 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, auth as admin_auth, firestore
 import google.generativeai as genai
 import os
 import requests
@@ -19,42 +17,9 @@ st.set_page_config(
 )
 
 # Initialize Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y")) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY", "AIzaSyDRPnG-GZm_H234VaGFheeY39FqnpjeQ4Y")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-
-# Initialize Firebase (with service account)
-try:
-    if not firebase_admin._apps:
-        # Try to get Firebase config from Streamlit secrets first
-        if hasattr(st, 'secrets') and 'firebase' in st.secrets:
-            firebase_config = dict(st.secrets['firebase'])
-            creds = credentials.Certificate(firebase_config)
-        else:
-            # Fallback to environment variables
-            firebase_config = {
-                "type": "service_account",
-                "project_id": os.getenv("FIREBASE_PROJECT_ID", "omnistudy-37774"),
-                "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-                "private_key": os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n'),
-                "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-                "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": os.getenv("FIREBASE_CERT_URL")
-            }
-            creds = credentials.Certificate(firebase_config)
-        firebase_admin.initialize_app(creds)
-except Exception as e:
-    st.error(f"⚠️ Firebase initialization failed: {str(e)}")
-    st.info("👉 Please configure Firebase credentials in Streamlit Cloud Settings → Secrets")
-
-# Initialize Firestore
-try:
-    db = firestore.client()
-except:
-    db = None
 
 # CSS styling
 st.markdown("""
