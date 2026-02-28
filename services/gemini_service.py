@@ -14,6 +14,14 @@ if API_KEY:
 else:
     client = None
 
+MODEL_CANDIDATES = [
+    os.getenv("GEMINI_MODEL", "").strip(),
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-2.0-flash"
+]
+MODEL_CANDIDATES = [m for m in MODEL_CANDIDATES if m]
+
 BASE_CLEAN_TEXT_INSTRUCTION = """
 IMPORTANT: Do not use Markdown symbols like #, *, **, or _ in your response. 
 Do not use labels like "The Text:", "The Explanation:", or "Explanation:". 
@@ -26,13 +34,34 @@ def get_socratic_instruction(is_socratic: bool) -> str:
     base = "You are a Socratic Tutor. Never give the direct answer. Provide guidance and ask questions to lead the student to the answer." if is_socratic else "You are a helpful, direct study buddy."
     return base + BASE_CLEAN_TEXT_INSTRUCTION
 
+def _generate_with_fallback(prompt: str) -> str:
+    if not client:
+        return "Error: Gemini API key not configured."
+
+    errors = []
+    for model in MODEL_CANDIDATES:
+        try:
+            response = client.models.generate_content(model=model, contents=prompt)
+            return response.text
+        except Exception as e:
+            err = str(e)
+            errors.append(f"{model}: {err}")
+            if "limit: 0" in err.lower() or "resource_exhausted" in err.lower():
+                continue
+            # For non-quota errors, keep trying next model anyway.
+            continue
+
+    return (
+        "Error: All configured Gemini models are unavailable for this API key/project. "
+        "Please check quota/billing and model access.\n\n" + "\n".join(errors[-3:])
+    )
+
 def explain_concept(concept: str, image_base64: Optional[str] = None, socratic: bool = False) -> Dict[str, Any]:
     """Explain a concept using Gemini API"""
     try:
         prompt = f"{get_socratic_instruction(socratic)}\n\nExplain this: {concept}"
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         return {
-            "text": response.text,
+            "text": _generate_with_fallback(prompt),
             "sources": []
         }
     except Exception as e:
@@ -50,8 +79,7 @@ def summarize_text(text: str, length: str = "Medium") -> str:
             "Detailed": "Provide a detailed summary (3-4 paragraphs)"
         }
         prompt = f"{length_instruction.get(length, 'Provide a summary')} of the following text:\n\n{text}"
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        return response.text
+        return _generate_with_fallback(prompt)
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -68,12 +96,12 @@ def generate_quiz(topic: str, num_questions: int = 5, difficulty: str = "Medium"
         
         Format as JSON array."""
         
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        response_text = _generate_with_fallback(prompt)
         import json
         try:
-            return json.loads(response.text)
+            return json.loads(response_text)
         except:
-            return [{"question": response.text, "options": [], "correct": "A", "explanation": ""}]
+            return [{"question": response_text, "options": [], "correct": "A", "explanation": ""}]
     except Exception as e:
         return [{"question": f"Error: {str(e)}", "options": [], "correct": "A", "explanation": ""}]
 
@@ -88,12 +116,12 @@ def generate_flashcards(topic: str, num_cards: int = 10) -> List[Dict[str, str]]
         
         Format as JSON array."""
         
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        response_text = _generate_with_fallback(prompt)
         import json
         try:
-            return json.loads(response.text)
+            return json.loads(response_text)
         except:
-            return [{"front": topic, "back": response.text}]
+            return [{"front": topic, "back": response_text}]
     except Exception as e:
         return [{"front": topic, "back": f"Error: {str(e)}"}]
 
@@ -107,8 +135,7 @@ def analyze_document(file_content: str, analysis_type: str = "Summary") -> str:
             "Explanation": f"Provide a detailed explanation of the concepts in:\n\n{file_content}"
         }
         prompt = prompts.get(analysis_type, f"Analyze:\n\n{file_content}")
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        return response.text
+        return _generate_with_fallback(prompt)
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -123,8 +150,7 @@ def generate_mnemonics(concept: str, mnemonic_type: str = "Acronym") -> str:
             "Association": f"Create word associations to remember {concept}"
         }
         prompt = type_prompts.get(mnemonic_type, f"Create a mnemonic for {concept}")
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        return response.text
+        return _generate_with_fallback(prompt)
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -132,7 +158,6 @@ def generate_story(topic: str, style: str = "Educational", audience: str = "Adul
     """Generate an educational story using Gemini API"""
     try:
         prompt = f"Write a {style} story about {topic} for {audience}. Make it engaging and educational."
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        return response.text
+        return _generate_with_fallback(prompt)
     except Exception as e:
         return f"Error: {str(e)}"

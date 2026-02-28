@@ -4,6 +4,7 @@ import os
 import json
 import requests
 from typing import Optional, List, Dict, Any
+import importlib
 
 # Page configuration - MUST be first Streamlit command
 st.set_page_config(
@@ -20,6 +21,11 @@ except Exception:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 try:
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+except Exception:
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
+try:
     FIREBASE_WEB_API_KEY = st.secrets["FIREBASE_WEB_API_KEY"]
 except Exception:
     FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "")
@@ -31,32 +37,125 @@ if GEMINI_API_KEY:
         gemini_client = genai.Client(api_key=GEMINI_API_KEY)
     except Exception as e:
         st.error(f"Failed to initialize Gemini: {str(e)}")
-else:
-    st.error("GEMINI_API_KEY not found. Add it in Settings > Secrets.")
 
-# Model used by all Gemini calls in this app
-AI_MODEL = "gemini-2.0-flash"
+# ─── Initialize Groq Client ───
+groq_client = None
+Groq = None
+try:
+    Groq = getattr(importlib.import_module("groq"), "Groq")
+except Exception:
+    Groq = None
+
+if GROQ_API_KEY and Groq is not None:
+    try:
+        groq_client = Groq(api_key=GROQ_API_KEY)
+    except Exception as e:
+        st.error(f"Failed to initialize Groq: {str(e)}")
+elif GROQ_API_KEY and Groq is None:
+    st.error("Groq SDK not installed. Add 'groq' to requirements.txt.")
+
+if not GROQ_API_KEY and not GEMINI_API_KEY:
+    st.error("No AI API key found. Add GROQ_API_KEY (recommended) or GEMINI_API_KEY in Secrets.")
+
+# Model configuration used by all Gemini calls in this app
+# You can override from secrets/env with GEMINI_MODELS="model-a,model-b"
+try:
+    _models_raw = st.secrets.get("GEMINI_MODELS", "")
+except Exception:
+    _models_raw = ""
+if not _models_raw:
+    _models_raw = os.getenv("GEMINI_MODELS", "")
+
+MODEL_CANDIDATES = [m.strip() for m in _models_raw.split(",") if m.strip()] if _models_raw else [
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-2.0-flash"
+]
+AI_MODEL = MODEL_CANDIDATES[0]
+
+try:
+    _groq_models_raw = st.secrets.get("GROQ_MODELS", "")
+except Exception:
+    _groq_models_raw = ""
+if not _groq_models_raw:
+    _groq_models_raw = os.getenv("GROQ_MODELS", "")
+
+GROQ_MODEL_CANDIDATES = [m.strip() for m in _groq_models_raw.split(",") if m.strip()] if _groq_models_raw else [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant"
+]
 
 # ─── Gemini AI Helper Functions ───
 
 def ai_generate(prompt: str, retries: int = 3) -> str:
-    if not gemini_client:
-        return "Error: Gemini API key not configured."
     import time
-    for attempt in range(retries):
-        try:
-            response = gemini_client.models.generate_content(
-                model=AI_MODEL,
-                contents=prompt
-            )
-            return response.text
-        except Exception as e:
-            err = str(e)
-            if "429" in err and attempt < retries - 1:
-                wait = (attempt + 1) * 15  # 15s, 30s, 45s backoff
-                time.sleep(wait)
-                continue
-            return f"Error ({AI_MODEL}): {err}"
+    provider_errors = []
+
+    # 1) Primary provider: Groq
+    if groq_client:
+        groq_errors = []
+        for model in GROQ_MODEL_CANDIDATES:
+            for attempt in range(retries):
+                try:
+                    response = groq_client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3
+                    )
+                    text = (response.choices[0].message.content or "").strip()
+                    st.session_state.last_ai_model = model
+                    st.session_state.last_ai_provider = "Groq"
+                    return text
+                except Exception as e:
+                    err = str(e)
+                    lower_err = err.lower()
+                    groq_errors.append(f"{model}: {err}")
+                    if "429" in lower_err and attempt < retries - 1:
+                        wait = (attempt + 1) * 5
+                        time.sleep(wait)
+                        continue
+                    break
+        provider_errors.append("Groq -> " + " | ".join(groq_errors[-2:]))
+
+    # 2) Fallback provider: Gemini
+    if not gemini_client:
+        return "Error: No AI provider configured. Add GROQ_API_KEY (recommended) or GEMINI_API_KEY."
+
+    errors = []
+    for model in MODEL_CANDIDATES:
+        for attempt in range(retries):
+            try:
+                response = gemini_client.models.generate_content(
+                    model=model,
+                    contents=prompt
+                )
+                st.session_state.last_ai_model = model
+                st.session_state.last_ai_provider = "Gemini"
+                return response.text
+            except Exception as e:
+                err = str(e)
+                lower_err = err.lower()
+                errors.append(f"{model}: {err}")
+
+                # Model/project has no free-tier allocation; immediately try next model.
+                if "limit: 0" in lower_err or "resource_exhausted" in lower_err:
+                    break
+
+                # Transient rate limit: retry same model with backoff.
+                if "429" in lower_err and attempt < retries - 1:
+                    wait = (attempt + 1) * 10
+                    time.sleep(wait)
+                    continue
+
+                # Non-retryable error for this model.
+                break
+
+    return (
+        "Error: All configured AI providers are currently unavailable. "
+        "Check GROQ_API_KEY/GEMINI_API_KEY, quotas, and model access.\n\n"
+        + "\n".join(provider_errors[-1:]) + ("\n" if provider_errors else "")
+        + "\n".join(errors[-3:])
+    )
 
 def explain_concept(concept: str, socratic: bool = False) -> Dict[str, Any]:
     instruction = (
@@ -181,6 +280,10 @@ if "current_view" not in st.session_state:
     st.session_state.current_view = "dashboard"
 if "show_register" not in st.session_state:
     st.session_state.show_register = False
+if "last_ai_model" not in st.session_state:
+    st.session_state.last_ai_model = GROQ_MODEL_CANDIDATES[0] if groq_client else AI_MODEL
+if "last_ai_provider" not in st.session_state:
+    st.session_state.last_ai_provider = "Groq" if groq_client else "Gemini"
 
 # ─── CSS Styling ───
 st.markdown("""
@@ -385,9 +488,11 @@ if not st.session_state.user:
                     st.rerun()
 else:
     with st.sidebar:
+        shown_key = GROQ_API_KEY if st.session_state.last_ai_provider == "Groq" else GEMINI_API_KEY
         st.markdown(f"### 👋 {st.session_state.user['name']}")
-        st.caption(f"Model: {AI_MODEL}")
-        st.caption(f"API Key: ...{GEMINI_API_KEY[-8:] if GEMINI_API_KEY else 'NOT SET'}")
+        st.caption(f"Provider: {st.session_state.last_ai_provider}")
+        st.caption(f"Model: {st.session_state.last_ai_model}")
+        st.caption(f"API Key: ...{shown_key[-8:] if shown_key else 'NOT SET'}")
         st.divider()
         nav = {
             "📊 Dashboard": "dashboard",
