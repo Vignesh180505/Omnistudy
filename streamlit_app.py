@@ -34,19 +34,29 @@ if GEMINI_API_KEY:
 else:
     st.error("GEMINI_API_KEY not found. Add it in Settings > Secrets.")
 
+# Model used by all Gemini calls in this app
+AI_MODEL = "gemini-2.0-flash"
+
 # ─── Gemini AI Helper Functions ───
 
-def ai_generate(prompt: str) -> str:
+def ai_generate(prompt: str, retries: int = 3) -> str:
     if not gemini_client:
         return "Error: Gemini API key not configured."
-    try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash-lite",
-            contents=prompt
-        )
-        return response.text
-    except Exception as e:
-        return f"Error: {str(e)}"
+    import time
+    for attempt in range(retries):
+        try:
+            response = gemini_client.models.generate_content(
+                model=AI_MODEL,
+                contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            err = str(e)
+            if "429" in err and attempt < retries - 1:
+                wait = (attempt + 1) * 15  # 15s, 30s, 45s backoff
+                time.sleep(wait)
+                continue
+            return f"Error ({AI_MODEL}): {err}"
 
 def explain_concept(concept: str, socratic: bool = False) -> Dict[str, Any]:
     instruction = (
@@ -376,6 +386,8 @@ if not st.session_state.user:
 else:
     with st.sidebar:
         st.markdown(f"### 👋 {st.session_state.user['name']}")
+        st.caption(f"Model: {AI_MODEL}")
+        st.caption(f"API Key: ...{GEMINI_API_KEY[-8:] if GEMINI_API_KEY else 'NOT SET'}")
         st.divider()
         nav = {
             "📊 Dashboard": "dashboard",
